@@ -2,17 +2,26 @@
 #include <exception>
 #include <string>
 #include <fstream>
+#include <queue>
+#include <map>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 
 std::mutex clientListLock;
 std::mutex msgLock;
+std::condition_variable cond;
 
 std::vector<std::thread*> clients_Thread;
 std::map<std::string, SOCKET>clients_List;
-std::queue<std::string> client_Msgs;
+std::queue<std::string> clients_Msgs;
 
 void clientHandler(SOCKET clientSocket);
 void saveMsg();
-void logginHandler(SOCKET clientSocket);
+std::string logginHandler(SOCKET clientSocket);
+void clientUpdate(SOCKET clientSocket, std::string userName);
 
 Server::Server()
 {
@@ -91,6 +100,7 @@ void Server::accept()
 void clientHandler(SOCKET clientSocket)
 {
 	int typeCode = 0;
+	std::string userName = "";
 	try
 	{
 		while (true)
@@ -100,11 +110,11 @@ void clientHandler(SOCKET clientSocket)
 			switch (typeCode)
 			{
 			case 200:	// Login msg.
-				logginHandler(clientSocket);
+				userName = logginHandler(clientSocket);
 				break;
 
 			case 204:	// Client update msg.
-
+				clientUpdate(clientSocket, userName);
 				break;
 		
 			default:
@@ -116,13 +126,17 @@ void clientHandler(SOCKET clientSocket)
 	{
 		std::cerr << e.what() << std::endl;
 		closesocket(clientSocket);
+		clients_List.erase(userName);
+		std::cout << userName << " disconnected!" << std::endl;
 	}
 }
 
 /*
 	The function handle with the loggin request.
+	return:
+		userName - the new username that was loggin.
 */
-void logginHandler(SOCKET clientSocket)
+std::string logginHandler(SOCKET clientSocket)
 {
 	int nameBytes = 0;
 	std::string userName;
@@ -141,21 +155,68 @@ void logginHandler(SOCKET clientSocket)
 	std::cout << "ADDED new client! - " << userName << std::endl;
 
 	// Make the All_usernames
-	if (clients_List.size() > 1)
+	// Dont add the last name. (wont write '&' after no name)
+	std::map<std::string, SOCKET>::iterator it = clients_List.begin();
+	for (int i = 0; i < clients_List.size() - 1; i++)
 	{
-		for (auto& user : clients_List)
-		{
-			userNames += user.first;
-			userNames += "&";
-		}
+		userNames += it->first;
+		userNames += "&";
+		it++;
 	}
-	else
-	{
-		userNames += userName;
-	}
+	userNames += it->first; // Add the last name.
 
 	// Send update msg to client.
 	Helper::send_update_message_to_client(clientSocket, "", "", userNames);
+	
+	return userName;
+}
+
+/*
+	The function handle with the users communication. (send msg between users)
+*/
+void clientUpdate(SOCKET clientSocket, std::string userName)
+{
+	// Get length of username to send
+	int userBytes = Helper::getIntPartFromSocket(clientSocket, 2);
+
+	// Get username to send
+	std::string sendToUser = Helper::getStringPartFromSocket(clientSocket, userBytes);
+
+	// Get Len of msg to send.
+	int msgBytes = Helper::getIntPartFromSocket(clientSocket, 5);
+
+	// Get msg to send
+	std::string msgToSend = Helper::getStringPartFromSocket(clientSocket, msgBytes);
+	
+	// if user wasnt found.
+	if (clients_List.find(sendToUser) == clients_List.end()) 
+	{
+		sendToUser = "";
+		msgToSend = "";
+	}
+
+	// Make the All_usernames
+	std::string userNames = "";
+	std::map<std::string, SOCKET>::iterator it = clients_List.begin();
+
+	// Dont add the last name. (wont write '&' after no name)
+	for (int i = 0; i < clients_List.size() - 1; i++)
+	{
+		userNames += it->first;
+		userNames += "&";
+		it++;
+	}
+	userNames += it->first; // Add the last name.
+
+	// Send update msg to client.
+	Helper::send_update_message_to_client(clientSocket, msgToSend, sendToUser, userNames);
+
+	// Add the msg to the queue
+	std::string msg = userName + "&" + msgToSend + "&" + sendToUser; // Create the message that will be in the file.
+	std::unique_lock<std::mutex> locker(msgLock);
+	clients_Msgs.push(msg);
+	locker.unlock();
+	cond.notify_one();
 }
 
 /*
@@ -163,5 +224,47 @@ void logginHandler(SOCKET clientSocket)
 */
 void saveMsg()
 {
+	// file things
 	std::fstream file;
+	std::string fileName, finishMsg;
+
+	// msg things
+	std::string totalMsg, fromUser, msg, toUser;
+
+	while (true)
+	{
+		std::unique_lock<std::mutex> locker(msgLock);
+		cond.wait(locker, []() { return !clients_Msgs.empty(); }); // if the queue is empry return to sleep.
+
+		totalMsg = clients_Msgs.front(); // Get the last message
+		// Get user to send to
+		toUser = totalMsg.substr(totalMsg.find_last_of("&") + 1);	
+		// Get user that send the msg
+		fromUser = totalMsg.substr(0, totalMsg.find_first_of("&"));	
+		// Get message length
+		int msg_length = totalMsg.length() - toUser.length() - fromUser.length() - 2;
+		// Get the message
+		msg = totalMsg.substr(totalMsg.find_first_of("&") + 1, msg_length);
+		
+		// check who is bigger for the file name
+		if (fromUser > toUser)
+		{
+			fileName = "..//" + fromUser + "&" + toUser + ".txt";
+		}
+		else
+		{
+			fileName = toUser + "&" + fromUser + ".txt";
+		}
+
+		// Create the msg to save.
+		finishMsg += "&MAGSH_MESSAGE&&Author&" + fromUser + "&DATA&" + msg;
+
+		// Write to the file the msg.
+		file.open(fileName); 
+		file << finishMsg;
+		file.close();
+
+		// Delete the las message.
+		clients_Msgs.pop();
+	}
 }
