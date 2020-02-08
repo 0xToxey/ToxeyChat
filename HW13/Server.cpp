@@ -6,6 +6,14 @@
 std::mutex clientListLock;
 std::mutex msgLock;
 
+std::vector<std::thread*> clients_Thread;
+std::map<std::string, SOCKET>clients_List;
+std::queue<std::string> client_Msgs;
+
+void clientHandler(SOCKET clientSocket);
+void saveMsg();
+void logginHandler(SOCKET clientSocket);
+
 Server::Server()
 {
 	// this server use TCP. that why SOCK_STREAM & IPPROTO_TCP
@@ -44,7 +52,7 @@ void Server::serve(int port)
 	std::cout << "listening on port " << port << std::endl;
 
 	// Create thread that handle with client messages.
-	std::thread msgHandle(saveMsg, this);
+	std::thread msgHandle(saveMsg);
 
 	// Accepting clients.
 	while (true)
@@ -54,14 +62,13 @@ void Server::serve(int port)
 	}
 
 	// Delete clients threads.
-	for (auto& clientThread : this->clients_Thread)
+	for (auto& clientThread : clients_Thread)
 	{
 		clientThread->join();
 		delete clientThread;
 	}
 	msgHandle.join();
 }
-
 
 void Server::accept()
 {
@@ -71,65 +78,56 @@ void Server::accept()
 	if (client_socket == INVALID_SOCKET)
 		throw std::exception(__FUNCTION__);
 
-	std::cout << "Client accepted! " << std::endl;
+	std::cout << "Client accepted ! " << std::endl;
 
 	// Make a thread for the client and add it to the clients Threads.
-	std::thread* client = new std::thread(clientHandler, client_socket, this);
-	this->clients_Thread.push_back(client);
+	std::thread* client = new std::thread(clientHandler, client_socket);
+	clients_Thread.push_back(client);
 }
 
-
-void clientHandler(SOCKET clientSocket, Server selfClass)
+/*
+	The function handle with new client
+*/
+void clientHandler(SOCKET clientSocket)
 {
 	int typeCode = 0;
 	try
 	{
-		typeCode = Helper::getMessageTypeCode(clientSocket);
-
-		switch (typeCode)
+		while (true)
 		{
-		case 200:	// Login msg.
-			logginHandler(clientSocket, selfClass);
-			break;
+			typeCode = Helper::getMessageTypeCode(clientSocket);
 
-		case 204:	// Client update msg.
+			switch (typeCode)
+			{
+			case 200:	// Login msg.
+				logginHandler(clientSocket);
+				break;
 
-			break;
+			case 204:	// Client update msg.
+
+				break;
 		
-		default:
-			break;
+			default:
+				break;
+			}
 		}
-
-		//std::string s = "Welcome! What is your name (4 bytes)? ";
-		//send(clientSocket, s.c_str(), s.size(), 0);  // last parameter: flag. for us will be 0.
-
-		//char m[5];
-		//recv(clientSocket, m, 4, 0);
-		//m[4] = 0;
-		//std::cout << "Client name is: " << m << std::endl;
-
-		//s = "Bye";
-		//send(clientSocket, s.c_str(), s.size(), 0);
-
-		//// Closing the socket (in the level of the TCP protocol)
-		//closesocket(clientSocket);
 	}
 	catch (const std::exception& e)
 	{
+		std::cerr << e.what() << std::endl;
 		closesocket(clientSocket);
 	}
 }
 
-
 /*
 	The function handle with the loggin request.
 */
-void logginHandler(SOCKET clientSocket, Server selfClass)
+void logginHandler(SOCKET clientSocket)
 {
 	int nameBytes = 0;
 	std::string userName;
 
-	std::string userNames;
+	std::string userNames = "";
 
 	// Get user name from socket.
 	nameBytes = Helper::getIntPartFromSocket(clientSocket, 2);
@@ -137,25 +135,33 @@ void logginHandler(SOCKET clientSocket, Server selfClass)
 
 	// lock the Clients list and add the new client.
 	std::unique_lock<std::mutex> lock(clientListLock);
-	selfClass.clients_List.insert({ userName, clientSocket });
+	clients_List.insert({ userName, clientSocket });
 	lock.unlock();
 	
+	std::cout << "ADDED new client! - " << userName << std::endl;
+
 	// Make the All_usernames
-	for (auto& user : selfClass.clients_List)
+	if (clients_List.size() > 1)
 	{
-		userNames += user.first;
-		userNames += "&";
+		for (auto& user : clients_List)
+		{
+			userNames += user.first;
+			userNames += "&";
+		}
+	}
+	else
+	{
+		userNames += userName;
 	}
 
 	// Send update msg to client.
-	Helper::send_update_message_to_client(clientSocket, "", 0, userNames);
+	Helper::send_update_message_to_client(clientSocket, "", "", userNames);
 }
-
 
 /*
 	The funtion save the messages to files.
 */
-void saveMsg(Server selfClass)
+void saveMsg()
 {
 	std::fstream file;
 }
