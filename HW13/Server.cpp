@@ -1,6 +1,5 @@
 #include "Server.h"
 #include <exception>
-#include <iostream>
 #include <string>
 
 Server::Server()
@@ -36,17 +35,16 @@ void Server::serve(int port)
 	// Connects between the socket and the configuration (port and etc..)
 	if (bind(_serverSocket, (struct sockaddr*)&sa, sizeof(sa)) == SOCKET_ERROR)
 		throw std::exception(__FUNCTION__ " - bind");
-	
+	std::cout << "binded" << std::endl;
+
 	// Start listening for incoming requests of clients
 	if (listen(_serverSocket, SOMAXCONN) == SOCKET_ERROR)
 		throw std::exception(__FUNCTION__ " - listen");
-	std::cout << "Listening on port " << port << std::endl;
+	std::cout << "listening on port " << port << std::endl;
 
 	while (true)
 	{
-		// the main thread is only accepting clients 
-		// and add then to the list of handlers
-		std::cout << "Waiting for client connection request" << std::endl;
+		std::cout << "accepting clients..." << std::endl;
 		accept();
 	}
 }
@@ -54,45 +52,43 @@ void Server::serve(int port)
 
 void Server::accept()
 {
-	// notice that we step out to the global namespace
-	// for the resolution of the function accept
-
 	// this accepts the client and create a specific socket from server to this client
 	SOCKET client_socket = ::accept(_serverSocket, NULL, NULL);
 
 	if (client_socket == INVALID_SOCKET)
 		throw std::exception(__FUNCTION__);
 
-	std::cout << "Client accepted. Server and client can speak" << std::endl;
+	std::cout << "Client accepted! " << std::endl;
 
-	// the function that handle the conversation with the client
-	clientHandler(client_socket);
+	// Make a thread for the client and add it to the clients.
+	std::thread* client = new std::thread(clientHandler, client_socket);
+
+	this->clients_thread.push_back(client);
 }
 
 
-void Server::clientHandler(SOCKET clientSocket)
+void clientHandler(SOCKET clientSocket)
 {
 	try
 	{
-		std::string s = "Welcome! What is your name (4 bytes)? ";
-		send(clientSocket, s.c_str(), s.size(), 0);  // last parameter: flag. for us will be 0.
 
-		char m[5];
-		recv(clientSocket, m, 4, 0);
-		m[4] = 0;
-		std::cout << "Client name is: " << m << std::endl;
 
-		s = "Bye";
-		send(clientSocket, s.c_str(), s.size(), 0);
-		
-		// Closing the socket (in the level of the TCP protocol)
-		closesocket(clientSocket); 
+		//std::string s = "Welcome! What is your name (4 bytes)? ";
+		//send(clientSocket, s.c_str(), s.size(), 0);  // last parameter: flag. for us will be 0.
+
+		//char m[5];
+		//recv(clientSocket, m, 4, 0);
+		//m[4] = 0;
+		//std::cout << "Client name is: " << m << std::endl;
+
+		//s = "Bye";
+		//send(clientSocket, s.c_str(), s.size(), 0);
+
+		//// Closing the socket (in the level of the TCP protocol)
+		//closesocket(clientSocket);
 	}
 	catch (const std::exception& e)
 	{
 		closesocket(clientSocket);
 	}
-
-
 }
-
