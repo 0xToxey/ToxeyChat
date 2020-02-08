@@ -4,6 +4,7 @@
 #include "Server.h"
 #include <iostream>
 #include <exception>
+#include <fstream>
 
 int main()
 {
@@ -11,6 +12,14 @@ int main()
 	{
 		WSAInitializer wsaInit;
 		Server myServer;
+		std::fstream configFile;
+		configFile.open("..//config.txt");
+		std::string ip;
+		std::string port;
+
+		getline(configFile, ip);
+		getline(configFile, port);
+
 
 		myServer.serve(8876);
 	}
