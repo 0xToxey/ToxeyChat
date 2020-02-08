@@ -5,6 +5,7 @@
 #include <iostream>
 #include <exception>
 #include <fstream>
+#include <string>
 
 int main()
 {
@@ -12,20 +13,19 @@ int main()
 	{
 		WSAInitializer wsaInit;
 		Server myServer;
-		std::fstream configFile;
-		configFile.open("..//config.txt");
+
+		// Get configorations
+		std::ifstream configFile("..//config.txt");
 		std::string ip;
 		std::string port;
-
 		getline(configFile, ip);
 		getline(configFile, port);
 
-
-		myServer.serve(8876);
+		myServer.serve(std::stoi(port));
 	}
 	catch (std::exception& e)
 	{
-		std::cout << "Error occured: " << e.what() << std::endl;
+		std::cerr << "Error occured: " << e.what() << std::endl;
 	}
 	system("PAUSE");
 	return 0;
