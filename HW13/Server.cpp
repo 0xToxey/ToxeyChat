@@ -148,9 +148,9 @@ std::string logginHandler(SOCKET clientSocket)
 	userName = Helper::getStringPartFromSocket(clientSocket, nameBytes);
 
 	// lock the Clients list and add the new client.
-	std::unique_lock<std::mutex> lock(clientListLock);
+	std::unique_lock<std::mutex> locker(clientListLock);
 	clients_List.insert({ userName, clientSocket });
-	lock.unlock();
+	locker.unlock();
 	
 	std::cout << "ADDED new client! - " << userName << std::endl;
 
@@ -211,12 +211,15 @@ void clientUpdate(SOCKET clientSocket, std::string userName)
 	// Send update msg to client.
 	Helper::send_update_message_to_client(clientSocket, msgToSend, sendToUser, userNames);
 
-	// Add the msg to the queue
-	std::string msg = userName + "&" + msgToSend + "&" + sendToUser; // Create the message that will be in the file.
-	std::unique_lock<std::mutex> locker(msgLock);
-	clients_Msgs.push(msg);
-	locker.unlock();
-	cond.notify_one();
+	// If the message to send to is valid, add it to the queue.
+	if (msgToSend != "")
+	{
+		std::string msg = userName + "&" + msgToSend + "&" + sendToUser; // Create the message that will be in the file.
+		std::unique_lock<std::mutex> locker(msgLock);
+		clients_Msgs.push(msg);
+		locker.unlock();
+		cond.notify_one();
+	}
 }
 
 /*
@@ -247,23 +250,25 @@ void saveMsg()
 		msg = totalMsg.substr(totalMsg.find_first_of("&") + 1, msg_length);
 		
 		// check who is bigger for the file name
-		if (fromUser > toUser)
+		if (fromUser < toUser)
 		{
 			fileName = "..//" + fromUser + "&" + toUser + ".txt";
 		}
 		else
 		{
-			fileName = toUser + "&" + fromUser + ".txt";
+			fileName = "..//" + toUser + "&" + fromUser + ".txt";
 		}
 
 		// Create the msg to save.
 		finishMsg += "&MAGSH_MESSAGE&&Author&" + fromUser + "&DATA&" + msg;
 
 		// Write to the file the msg.
-		file.open(fileName); 
-		file << finishMsg;
-		file.close();
-
+		file.open(fileName);
+		if (file.is_open())
+		{
+			file << finishMsg;
+			file.close();
+		}
 		// Delete the las message.
 		clients_Msgs.pop();
 	}
