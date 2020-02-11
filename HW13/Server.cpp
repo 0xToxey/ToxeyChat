@@ -1,29 +1,10 @@
+#define NOMINMAX
+
 #include "Server.h"
 #include <exception>
 #include <string>
 #include <fstream>
-#include <queue>
-#include <map>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 
-
-std::mutex clientListLock;
-std::mutex fileLock;
-std::mutex msgLock;
-std::condition_variable cond;
-
-std::vector<std::thread*> clients_Thread;
-std::map<std::string, SOCKET>clients_List;
-std::queue<std::string> clients_Msgs;
-
-void clientHandler(SOCKET clientSocket);
-void saveMsg();
-std::string logginHandler(SOCKET clientSocket);
-void clientUpdate(SOCKET clientSocket, std::string userName);
-std::string readFromFile(std::string fromUser, std::string toUser);
 
 Server::Server()
 {
@@ -63,7 +44,7 @@ void Server::serve(int port)
 	std::cout << "listening on port " << port << std::endl;
 
 	// Create thread that handle with client messages.
-	std::thread msgHandle(saveMsg);
+	std::thread (&Server::saveMsg, this).detach();
 
 	// Accepting clients.
 	while (true)
@@ -71,14 +52,6 @@ void Server::serve(int port)
 		std::cout << "accepting clients..." << std::endl;
 		accept();
 	}
-
-	// Delete clients threads.
-	for (auto& clientThread : clients_Thread)
-	{
-		clientThread->join();
-		delete clientThread;
-	}
-	msgHandle.join();
 }
 
 void Server::accept()
@@ -92,14 +65,14 @@ void Server::accept()
 	std::cout << "Client accepted ! " << std::endl;
 
 	// Make a thread for the client and add it to the clients Threads.
-	std::thread* client = new std::thread(clientHandler, client_socket);
-	clients_Thread.push_back(client);
+	std::thread(&Server::clientHandler, this, client_socket).detach();
 }
+
 
 /*
 	The function handle with new client
 */
-void clientHandler(SOCKET clientSocket)
+void Server::clientHandler(SOCKET clientSocket)
 {
 	int typeCode = 0;
 	std::string userName = "";
@@ -111,11 +84,11 @@ void clientHandler(SOCKET clientSocket)
 
 			switch (typeCode)
 			{
-			case 200:	// Login msg.
+			case MT_CLIENT_LOG_IN:	// Login msg.
 				userName = logginHandler(clientSocket);
 				break;
 
-			case 204:	// Client update msg.
+			case MT_CLIENT_UPDATE:	// Client update msg.
 				clientUpdate(clientSocket, userName);
 				break;
 		
@@ -128,44 +101,36 @@ void clientHandler(SOCKET clientSocket)
 	{
 		std::cerr << e.what() << std::endl;
 		closesocket(clientSocket);
-		clients_List.erase(userName);
+		this->_clients_List.erase(userName);
 		std::cout << userName << " disconnected!" << std::endl;
 	}
 }
+
 
 /*
 	The function handle with the loggin request.
 	return:
 		userName - the new username that was loggin.
 */
-std::string logginHandler(SOCKET clientSocket)
+std::string Server::logginHandler(SOCKET clientSocket)
 {
 	int nameBytes = 0;
-	std::string userName;
-
-	std::string userNames = "";
+	std::string userName, userNames;
 
 	// Get user name from socket.
 	nameBytes = Helper::getIntPartFromSocket(clientSocket, 2);
 	userName = Helper::getStringPartFromSocket(clientSocket, nameBytes);
 
 	// lock the Clients list and add the new client.
-	std::unique_lock<std::mutex> locker(clientListLock);
-	clients_List.insert({ userName, clientSocket });
+	std::unique_lock<std::mutex> locker(this->_clientListLock);
+	this->_clients_List.insert({ userName, clientSocket });
 	locker.unlock();
 	
 	std::cout << "ADDED new client! - " << userName << std::endl;
 
 	// Make the All_usernames
 	// Dont add the last name. (wont write '&' after no name)
-	std::map<std::string, SOCKET>::iterator it = clients_List.begin();
-	for (int i = 0; i < clients_List.size() - 1; i++)
-	{
-		userNames += it->first;
-		userNames += "&";
-		it++;
-	}
-	userNames += it->first; // Add the last name.
+	userNames = getUserNameList();
 
 	// Send update msg to client.
 	Helper::send_update_message_to_client(clientSocket, "", "", userNames);
@@ -173,145 +138,130 @@ std::string logginHandler(SOCKET clientSocket)
 	return userName;
 }
 
+
 /*
 	The function handle with the users communication. (send msg between users)
 */
-void clientUpdate(SOCKET clientSocket, std::string userName)
+void Server::clientUpdate(SOCKET clientSocket, std::string userName)
 {
-	// Get length of username to send
+	// Get username to send to from client.
 	int userBytes = Helper::getIntPartFromSocket(clientSocket, 2);
-
-	// Get username to send
 	std::string sendToUser = Helper::getStringPartFromSocket(clientSocket, userBytes);
 
-	// Get Len of msg to send.
+	// Get msg to send.
 	int msgBytes = Helper::getIntPartFromSocket(clientSocket, 5);
-
-	// Get msg to send
 	std::string msgToSend = Helper::getStringPartFromSocket(clientSocket, msgBytes);
 	
 	// if user wasnt found.
-	if (clients_List.find(sendToUser) == clients_List.end()) 
+	if (this->_clients_List.find(sendToUser) == this->_clients_List.end()) 
 	{
 		sendToUser = "";
 		msgToSend = "";
 	}
 
 	// Make the All_usernames
-	std::string userNames = "";
-	std::map<std::string, SOCKET>::iterator it = clients_List.begin();
-
-	// Dont add the last name. (wont write '&' after no name)
-	for (int i = 0; i < clients_List.size() - 1; i++)
-	{
-		userNames += it->first;
-		userNames += "&";
-		it++;
-	}
-	userNames += it->first; // Add the last name.
+	std::string userNames = getUserNameList();
 
 	// If the message to send to is valid, add it to the queue.
-	if (msgToSend != "")
+	if (!msgToSend.empty())
 	{
-		std::string msg = userName + "&" + msgToSend + "&" + sendToUser; // Create the message that will be in the file.
-		std::unique_lock<std::mutex> locker(msgLock);
-		clients_Msgs.push(msg);
-		locker.unlock();
-		cond.notify_one();
+		// Get file name.
+		std::string fileName = std::min(userName, sendToUser) + "&" + std::max(userName, sendToUser) + ".txt";
+		
+		// Create the message to save in the file.
+		std::string msg = "&MAGSH_MESSAGE&&Author&" + userName + "&DATA&" + msgToSend;
 
-		// If there is no problem with userName or msg, get the history from file. 
+		// Lock and push to the queue of masseges.
+		std::unique_lock<std::mutex> locker(this->_msgLock);
+		this->_clients_Msgs.push(std::pair<std::string, std::string>({ fileName, msg }));
+		locker.unlock();
+		this->_cond.notify_one();
+	}
+	
+	if (!sendToUser.empty())
+	{ 
 		msgToSend = readFromFile(userName, sendToUser);
 	}
 
 	// Send update msg to client.
 	Helper::send_update_message_to_client(clientSocket, msgToSend, sendToUser, userNames);
-
 }
+
 
 /*
 	The funtion save the messages to files.
 */
-void saveMsg()
+void Server::saveMsg()
 {
 	// file things
 	std::ofstream file;
-	std::string fileName, finishMsg;
+	std::string fileName;
 
-	// msg things
-	std::string totalMsg, fromUser, msg, toUser;
+	// msg things.
+	std::pair<std::string, std::string> name_msg;
+	std::string msg;
 
 	while (true)
 	{
-		std::unique_lock<std::mutex> locker(msgLock);
-		cond.wait(locker, []() { return !clients_Msgs.empty(); }); // if the queue is empry return to sleep.
+		std::unique_lock<std::mutex> locker(this->_msgLock);
+		this->_cond.wait(locker); // if the queue is empry return to sleep.
 
-		totalMsg = clients_Msgs.front(); // Get the last message
-		// Get user to send to
-		toUser = totalMsg.substr(totalMsg.find_last_of("&") + 1);	
-		// Get user that send the msg
-		fromUser = totalMsg.substr(0, totalMsg.find_first_of("&"));	
-		// Get message length
-		int msg_length = totalMsg.length() - toUser.length() - fromUser.length() - 2;
-		// Get the message
-		msg = totalMsg.substr(totalMsg.find_first_of("&") + 1, msg_length);
-		
-		// check who is bigger for the file name
-		if (fromUser < toUser)
-		{
-			fileName = fromUser + "&" + toUser + ".txt";
-		}
-		else
-		{
-			fileName = toUser + "&" + fromUser + ".txt";
-		}
-
-		// Create the msg to save.
-		finishMsg += "&MAGSH_MESSAGE&&Author&" + fromUser + "&DATA&" + msg;
+		name_msg = this->_clients_Msgs.front(); // Get the last message
+		fileName = name_msg.first;
+		msg = name_msg.second;
 
 		// Write to the file the msg.
-		std::unique_lock<std::mutex> file_Locker(fileLock);
+		std::unique_lock<std::mutex> file_Locker(this->_fileLock);
 		file.open(fileName, std::ios::app);
 		if (file.is_open())
 		{
-			file << finishMsg;
+			file << msg;
 			file.close();
 		}
 		file_Locker.unlock();
 
 		// Delete the last message.
-		clients_Msgs.pop();
+		this->_clients_Msgs.pop();
 	}
 }
+
 
 /*
 	The function read from the file the chat "history".
 */
-std::string readFromFile(std::string fromUser, std::string toUser)
+std::string Server::readFromFile(std::string fromUser, std::string toUser)
 {
-	std::ifstream file;
-	std::string fileName, msgs, msg;
-
-	// Get the file name.
-	if (fromUser < toUser)
-	{
-		fileName = fromUser + "&" + toUser + ".txt";
-	}
-	else
-	{
-		fileName = toUser + "&" + fromUser + ".txt";
-	}
+	std::string fileName = std::min(fromUser, toUser) + "&" + std::max(fromUser, toUser) + ".txt";
+	std::string msgs;
 
 	// Open the file and get all the messages between the users.
-	std::unique_lock<std::mutex> file_Locker(fileLock);
-	file.open(fileName, std::ios::in);
+	std::unique_lock<std::mutex> file_Locker(this->_fileLock);
+
+	std::ifstream file(fileName);
+
 	if (file.is_open())
 	{
-		while (std::getline(file, msg))
-		{
-			msgs += msg;
-		}
+		msgs = std::string((std::istreambuf_iterator<char>(file)),
+			std::istreambuf_iterator<char>());
 	}
 	file_Locker.unlock();
 
 	return msgs;
+}
+
+
+/*
+	The function return the list of userNames.
+*/
+std::string Server::getUserNameList()
+{
+	std::string userNames = "";
+
+	for (const auto& kv : this->_clients_List)
+	{
+		userNames += kv.first + "&";
+	}
+	userNames = userNames.substr(0, userNames.size() - 1);
+
+	return userNames;
 }
