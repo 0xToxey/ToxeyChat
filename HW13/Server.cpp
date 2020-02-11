@@ -11,6 +11,7 @@
 
 
 std::mutex clientListLock;
+std::mutex fileLock;
 std::mutex msgLock;
 std::condition_variable cond;
 
@@ -22,6 +23,7 @@ void clientHandler(SOCKET clientSocket);
 void saveMsg();
 std::string logginHandler(SOCKET clientSocket);
 void clientUpdate(SOCKET clientSocket, std::string userName);
+std::string readFromFile(std::string fromUser, std::string toUser);
 
 Server::Server()
 {
@@ -208,9 +210,6 @@ void clientUpdate(SOCKET clientSocket, std::string userName)
 	}
 	userNames += it->first; // Add the last name.
 
-	// Send update msg to client.
-	Helper::send_update_message_to_client(clientSocket, msgToSend, sendToUser, userNames);
-
 	// If the message to send to is valid, add it to the queue.
 	if (msgToSend != "")
 	{
@@ -219,7 +218,14 @@ void clientUpdate(SOCKET clientSocket, std::string userName)
 		clients_Msgs.push(msg);
 		locker.unlock();
 		cond.notify_one();
+
+		// If there is no problem with userName or msg, get the history from file. 
+		msgToSend = readFromFile(userName, sendToUser);
 	}
+
+	// Send update msg to client.
+	Helper::send_update_message_to_client(clientSocket, msgToSend, sendToUser, userNames);
+
 }
 
 /*
@@ -228,7 +234,7 @@ void clientUpdate(SOCKET clientSocket, std::string userName)
 void saveMsg()
 {
 	// file things
-	std::fstream file;
+	std::ofstream file;
 	std::string fileName, finishMsg;
 
 	// msg things
@@ -252,24 +258,60 @@ void saveMsg()
 		// check who is bigger for the file name
 		if (fromUser < toUser)
 		{
-			fileName = "..//" + fromUser + "&" + toUser + ".txt";
+			fileName = fromUser + "&" + toUser + ".txt";
 		}
 		else
 		{
-			fileName = "..//" + toUser + "&" + fromUser + ".txt";
+			fileName = toUser + "&" + fromUser + ".txt";
 		}
 
 		// Create the msg to save.
 		finishMsg += "&MAGSH_MESSAGE&&Author&" + fromUser + "&DATA&" + msg;
 
 		// Write to the file the msg.
-		file.open(fileName);
+		std::unique_lock<std::mutex> file_Locker(fileLock);
+		file.open(fileName, std::ios::app);
 		if (file.is_open())
 		{
 			file << finishMsg;
 			file.close();
 		}
-		// Delete the las message.
+		file_Locker.unlock();
+
+		// Delete the last message.
 		clients_Msgs.pop();
 	}
+}
+
+/*
+	The function read from the file the chat "history".
+*/
+std::string readFromFile(std::string fromUser, std::string toUser)
+{
+	std::ifstream file;
+	std::string fileName, msgs, msg;
+
+	// Get the file name.
+	if (fromUser < toUser)
+	{
+		fileName = fromUser + "&" + toUser + ".txt";
+	}
+	else
+	{
+		fileName = toUser + "&" + fromUser + ".txt";
+	}
+
+	// Open the file and get all the messages between the users.
+	std::unique_lock<std::mutex> file_Locker(fileLock);
+	file.open(fileName, std::ios::in);
+	if (file.is_open())
+	{
+		while (std::getline(file, msg))
+		{
+			msgs += msg;
+		}
+	}
+	file_Locker.unlock();
+
+	return msgs;
 }
