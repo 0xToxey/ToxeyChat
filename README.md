@@ -29,7 +29,7 @@ Homeworks for lesson 13 by Gabriel Bialyk
 ## What's included
 
 ```text
-.CPP, .H, .Sln (for VisualStudio), & .EXE
+.CPP, .H, .Sln (for VisualStudio), .EXE & .txt
 ```
 
 ## Creator
@@ -42,4 +42,4 @@ Homeworks for lesson 13 by Gabriel Bialyk
 
 **M.B**
 
-- <https://gitlab.com/TheNcar> - help me with to do somethings.
+- <https://gitlab.com/TheNcar> - help me to do stuff.
