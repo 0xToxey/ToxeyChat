@@ -10,7 +10,7 @@ Server::Server()
 {
 	// this server use TCP. that why SOCK_STREAM & IPPROTO_TCP
 	// if the server use UDP we will use: SOCK_DGRAM & IPPROTO_UDP
-	_serverSocket = socket(AF_INET,  SOCK_STREAM,  IPPROTO_TCP); 
+	_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	if (_serverSocket == INVALID_SOCKET)
 		throw std::exception(__FUNCTION__ " - socket");
@@ -28,13 +28,13 @@ Server::~Server()
 void Server::serve(int port)
 {
 	struct sockaddr_in sa = { 0 };
-	
+
 	sa.sin_port = htons(port);			// port that server will listen for
 	sa.sin_family = AF_INET;			// must be AF_INET
 	sa.sin_addr.s_addr = INADDR_ANY;    // when there are few ip's for the machine. We will use always "INADDR_ANY"
 
 	// Connects between the socket and the configuration (port and etc..)
-	if (bind(_serverSocket, (struct sockaddr*)&sa, sizeof(sa)) == SOCKET_ERROR)
+	if (bind(_serverSocket, (struct sockaddr*) & sa, sizeof(sa)) == SOCKET_ERROR)
 		throw std::exception(__FUNCTION__ " - bind");
 	std::cout << "binded" << std::endl;
 
@@ -44,7 +44,7 @@ void Server::serve(int port)
 	std::cout << "listening on port " << port << std::endl;
 
 	// Create thread that handle with client messages.
-	std::thread (&Server::saveMsg, this).detach();
+	std::thread(&Server::saveMsg, this).detach();
 
 	// Accepting clients.
 	while (true)
@@ -91,23 +91,18 @@ void Server::clientHandler(SOCKET clientSocket)
 			case MT_CLIENT_UPDATE:	// Client update msg.
 				clientUpdate(clientSocket, userName);
 				break;
-		
+
 			default:
 				break;
 			}
 		}
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		std::cerr << e.what() << std::endl;
 		closesocket(clientSocket);
 		this->_clients_List.erase(userName);
 		std::cout << userName << " disconnected!" << std::endl;
-	}
-	catch (...)
-	{
-		std::cerr << "Problem in loggin." << std::endl;
-		closesocket(clientSocket);
 	}
 }
 
@@ -119,26 +114,18 @@ void Server::clientHandler(SOCKET clientSocket)
 */
 std::string Server::logginHandler(SOCKET clientSocket)
 {
-	int nameBytes = 0, passBytes = 0;
+	int nameBytes = 0;
 	std::string userName, userNames;
-	std::string password;
 
-	// Get user name & pass from socket.
+	// Get user name from socket.
 	nameBytes = Helper::getIntPartFromSocket(clientSocket, 2);
 	userName = Helper::getStringPartFromSocket(clientSocket, nameBytes);
-
-	passBytes = Helper::getIntPartFromSocket(clientSocket, 2);
-	password = Helper::getStringPartFromSocket(clientSocket, passBytes);
-
-	bool loggin = tryLoggin(userName, password);
-	if (!loggin)
-		throw (std::string("Loggin didnt success!"));
 
 	// lock the Clients list and add the new client.
 	std::unique_lock<std::mutex> locker(this->_clientListLock);
 	this->_clients_List.insert({ userName, clientSocket });
 	locker.unlock();
-	
+
 	std::cout << "ADDED new client! - " << userName << std::endl;
 
 	// Make the All_usernames
@@ -147,7 +134,7 @@ std::string Server::logginHandler(SOCKET clientSocket)
 
 	// Send update msg to client.
 	Helper::send_update_message_to_client(clientSocket, "", "", userNames);
-	
+
 	return userName;
 }
 
@@ -164,9 +151,9 @@ void Server::clientUpdate(SOCKET clientSocket, std::string userName)
 	// Get msg to send.
 	int msgBytes = Helper::getIntPartFromSocket(clientSocket, 5);
 	std::string msgToSend = Helper::getStringPartFromSocket(clientSocket, msgBytes);
-	
+
 	// if user wasnt found.
-	if (this->_clients_List.find(sendToUser) == this->_clients_List.end()) 
+	if (this->_clients_List.find(sendToUser) == this->_clients_List.end())
 	{
 		sendToUser = "";
 		msgToSend = "";
@@ -180,7 +167,7 @@ void Server::clientUpdate(SOCKET clientSocket, std::string userName)
 	{
 		// Get file name.
 		std::string fileName = std::min(userName, sendToUser) + "&" + std::max(userName, sendToUser) + ".txt";
-		
+
 		// Create the message to save in the file.
 		std::string msg = "&MAGSH_MESSAGE&&Author&" + userName + "&DATA&" + msgToSend;
 
@@ -190,9 +177,9 @@ void Server::clientUpdate(SOCKET clientSocket, std::string userName)
 		locker.unlock();
 		this->_cond.notify_one();
 	}
-	
+
 	if (!sendToUser.empty())
-	{ 
+	{
 		msgToSend = readFromFile(userName, sendToUser);
 	}
 
@@ -277,61 +264,4 @@ std::string Server::getUserNameList()
 	userNames = userNames.substr(0, userNames.size() - 1);
 
 	return userNames;
-}
-
-
-/*
-	The function check if the user can loggin\create new user.
-*/
-bool Server::tryLoggin(std::string userName, std::string password)
-{
-	std::fstream usersFile;
-
-	std::map<std::string, std::string> users;
-	std::string user, pass;
-	bool successLoggin = false;
-
-	std::unique_lock<std::mutex> dataLocker(this->_userDataFile);
-	usersFile.open("usersData.txt", std::ios::app);
-
-	if (!usersFile.is_open())
-	{
-		successLoggin = false;
-	}
-	else
-	{
-		// get data from file into map.
-		std::getline(usersFile, pass);
-		while (std::getline(usersFile, pass))
-		{	
-			// Get user and pass (format: username|password )
-			user = pass.substr(0, pass.find("|"));
-			pass = pass.substr(pass.find("|") + 1);
-			users[user] = pass;
-		}
-
-		// If user was not found in the map, add it to the file as new user.
-		if (users.find(userName) == users.end())
-		{
-			std::string newUser = userName + "|" + password + "\n";
-			usersFile << newUser;
-			successLoggin = true; // Loggin success
-		}
-		else
-		{
-			// If the userName match the password return true, else return false.
-			if (users[userName] == password)
-			{
-				successLoggin = true;
-			}
-			else
-			{
-				successLoggin = false;
-			}
-		}
-	}
-
-	usersFile.close();
-	dataLocker.unlock();
-	return successLoggin;
 }
