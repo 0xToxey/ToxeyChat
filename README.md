@@ -40,6 +40,6 @@ Homeworks for lesson 13 by Gabriel Bialyk
 
 ## Credit
 
-**M.B**
+**M.B**  - help me to do stuff.
 
-- <https://gitlab.com/TheNcar> - help me to do stuff.
+- <https://gitlab.com/TheNcar>
