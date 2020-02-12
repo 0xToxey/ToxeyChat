@@ -104,7 +104,7 @@ void Server::clientHandler(SOCKET clientSocket)
 		this->_clients_List.erase(userName);
 		std::cout << userName << " disconnected!" << std::endl;
 	}
-	catch (...)
+	catch (...) // return loggin error
 	{
 		std::cerr << "Problem in loggin." << std::endl;
 		closesocket(clientSocket);
@@ -281,57 +281,69 @@ std::string Server::getUserNameList()
 
 
 /*
-	The function check if the user can loggin\create new user.
+	The function check if the user can loggin.
 */
 bool Server::tryLoggin(std::string userName, std::string password)
 {
-	std::fstream usersFile;
+	std::ifstream usersFile;
 
 	std::map<std::string, std::string> users;
 	std::string user, pass;
 	bool successLoggin = false;
 
-	std::unique_lock<std::mutex> dataLocker(this->_userDataFile);
-	usersFile.open("usersData.txt", std::ios::app);
+	std::unique_lock<std::mutex> dataLocker(this->_usersDataFile);
+	usersFile.open("usersData.txt");
 
-	if (!usersFile.is_open())
+	if (!usersFile.is_open()) // If the file was not open, quit.
 	{
-		successLoggin = false;
+		dataLocker.unlock();
+		return false; 
 	}
 	else
 	{
-		// get data from file into map.
-		std::getline(usersFile, pass);
+		// get data from file into map of username & pass.
 		while (std::getline(usersFile, pass))
-		{	
+		{
 			// Get user and pass (format: username|password )
 			user = pass.substr(0, pass.find("|"));
 			pass = pass.substr(pass.find("|") + 1);
 			users[user] = pass;
 		}
-
-		// If user was not found in the map, add it to the file as new user.
-		if (users.find(userName) == users.end())
-		{
-			std::string newUser = userName + "|" + password + "\n";
-			usersFile << newUser;
-			successLoggin = true; // Loggin success
-		}
-		else
-		{
-			// If the userName match the password return true, else return false.
-			if (users[userName] == password)
-			{
-				successLoggin = true;
-			}
-			else
-			{
-				successLoggin = false;
-			}
-		}
+		usersFile.close();
+		dataLocker.unlock();
 	}
 
-	usersFile.close();
-	dataLocker.unlock();
+	// If user was not found, add it as new user.
+	if (users.find(userName) == users.end())
+	{
+		successLoggin = addNewUser(userName, password);
+	}
+	else // User was found, check if pass match.
+	{
+		successLoggin = (users[userName] == password);
+	}
+
 	return successLoggin;
+}
+
+/*
+	The function add new user to the app.
+*/
+bool Server::addNewUser(std::string userName, std::string password)
+{
+	std::ofstream usersFile;
+	std::string newUser = userName + "|" + password + "\n";
+	bool success = false;
+
+	std::unique_lock<std::mutex> usersDataLocker(this->_usersDataFile);
+	usersFile.open("usersData.txt", std::ios::app);
+	if (usersFile.is_open())
+	{
+		usersFile << newUser;
+		usersFile.close();
+		success = true;
+	}
+
+	usersDataLocker.unlock();
+	return success;
 }
