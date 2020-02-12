@@ -268,9 +268,9 @@ std::string Server::getUserNameList()
 {
 	std::string userNames = "";
 
-	for (const auto& kv : this->_clients_List)
+	for (const auto& client : this->_clients_List)
 	{
-		userNames += kv.first + "&";
+		userNames += client.first + "&";
 	}
 	userNames = userNames.substr(0, userNames.size() - 1);
 

@@ -17,26 +17,25 @@ int main()
 		// Get configorations
 		std::ifstream configFile;
 
-		//configFile.open("..//config.txt");
-		//if (!configFile.is_open())
+		configFile.open("config.txt");
+		if (configFile.is_open())
 		{
 			std::string ip;
 			std::string port;
 
-			//getline(configFile, ip);
-			//getline(configFile, port);
+			getline(configFile, ip);
+			getline(configFile, port);
 
-			//port = port.substr(5, 5);
+			port = port.substr(5, 5);
 			std::cout << "Starting... " << std::endl;
 
 			// Start server.
-			//myServer.serve(std::stoi(port));
-			myServer.serve(8826);
+			myServer.serve(std::stoi(port));
 		}
-		//else // if config file dosent exist.
-		//{
-		//	throw std::exception("config file wasnt found!");
-		//}
+		else // if config file dosent exist.
+		{
+			throw std::exception("config file wasnt found!");
+		}
 	}
 	catch (std::exception& e)
 	{
