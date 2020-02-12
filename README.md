@@ -28,7 +28,7 @@ Homeworks for lesson 13 by Gabriel Bialyk
 ## What's included
 
 ```text
-.CPP, .H, .Sln, & .EXE
+.CPP, .H, .Sln (for VisualStudio), & .EXE
 ```
 
 ## Creator
