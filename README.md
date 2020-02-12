@@ -20,7 +20,7 @@ Homeworks for lesson 13 by Gabriel Bialyk
 ## Quick start
 
 - Open "MyChat" folder and download the exe files.
-- To run the server from VS make sure that the config.txt is in the sln.
+- To run the server with VS make sure that the config.txt is in the sln files.
 
 ## Status
 
