@@ -1,20 +1,20 @@
 <table align="center"><tr><td align="center" width="9999">
 <img src="https://www.freeiconspng.com/uploads/live-chat-icon-6.jpg" align="center" width="150" alt="Project icon">
 
-# CPP Lesson 13 - MT Server & client Chat
+# MT Server & client Chat
 
-Homeworks for lesson 13 by Gabriel Bialyk
+Chat by Toxey
 </td></tr></table>
 
 
 ## Table of contents
 
-- [CPP Lesson 13 - Chat](#cpp-lesson-13---mt-server-&-client-chat)
+- [Chat](#mt-server-&-client-chat)
 	- [Table of contents](#table-of-contents)
 	- [Quick start](#quick-start)
 	- [Status](#status)
 	- [What's included](#whats-included)
-	- [Creators](#creators)
+	- [Creator](#creator)
 	- [Credit](#credit)
 
 ## Quick start
